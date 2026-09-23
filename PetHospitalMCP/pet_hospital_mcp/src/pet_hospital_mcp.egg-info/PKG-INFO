@@ -1,0 +1,10 @@
+Metadata-Version: 2.4
+Name: pet-hospital-mcp
+Version: 1.0.0
+Summary: MCP server for Pet Hospital REST API
+Requires-Python: >=3.11
+Requires-Dist: mcp==2.0.0
+Requires-Dist: httpx
+Requires-Dist: pydantic
+Requires-Dist: pydantic-settings
+Requires-Dist: uvicorn
