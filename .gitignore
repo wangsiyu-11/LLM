@@ -1,0 +1,6 @@
+config.ini 
+Agent/wAgent/build/ 
+Agent/wAgent/dist/ 
+Agent/wAgent/Output/ 
+Agent/wAgent/*.spec 
+config.ini 
