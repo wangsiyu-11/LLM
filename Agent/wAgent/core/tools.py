@@ -1,6 +1,5 @@
 import os
 import shutil
-import json
 import subprocess
 import httpx
 import trafilatura
@@ -19,10 +18,10 @@ TOOLS_SCHEMA = [
     {"type": "function", "function": {"name": "rmdir", "description": "删除非空目录", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}},
     {"type": "function", "function": {"name": "rmfile", "description": "删除文件", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}},
     {"type": "function", "function": {"name": "rename", "description": "重命名文件或目录", "parameters": {"type": "object", "properties": {"old": {"type": "string"}, "new": {"type": "string"}}, "required": ["old", "new"]}}},
-    {"type": "function", "function": {"name": "searchWeb", "description": "通过百度千帆搜索互联网，获取最新信息。", "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "搜索关键词"}}, "required": ["query"]}}},
+    {"type": "function", "function": {"name": "searchWeb", "description": "通过百度千帆搜索互联网，获取最新信息。", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}},
     {"type": "function", "function": {"name": "fetchWeb", "description": "获取指定网页URL的主要内容。", "parameters": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}}},
-    {"type": "function", "function": {"name": "RunCli", "description": "执行本地命令行程序。", "parameters": {"type": "object", "properties": {"command": {"type": "string"}, "args": {"type": "array", "items": {"type": "string"}}}}, "required": ["command", "args"]}},
-    {"type": "function", "function": {"name": "loadSkill", "description": "加载指定技能的完整说明文档。", "parameters": {"type": "object", "properties": {"name": {"type": "string", "description": "技能名称"}, "filename": {"type": "string", "description": "可选，附加文件路径或名称"}}, "required": ["name"]}},
+    {"type": "function", "function": {"name": "RunCli", "description": "执行本地命令行程序。", "parameters": {"type": "object", "properties": {"command": {"type": "string"}, "args": {"type": "array", "items": {"type": "string"}}}, "required": ["command", "args"]}}},
+    {"type": "function", "function": {"name": "loadSkill", "description": "加载指定技能的完整说明文档。", "parameters": {"type": "object", "properties": {"name": {"type": "string"}, "filename": {"type": "string"}}, "required": ["name"]}}},
 ]
 
 
