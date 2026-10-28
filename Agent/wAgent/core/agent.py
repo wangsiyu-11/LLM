@@ -2,6 +2,7 @@ import httpx
 import json
 from config import BASE_URL, API_KEY, MODEL
 from core.tools import TOOLS_SCHEMA, execute_tool
+from core.skills import load_skills
 
 
 class LLMClient:
@@ -23,8 +24,14 @@ class LLMClient:
 class Agent:
     def __init__(self):
         self.llm = LLMClient()
+        skills = load_skills()
+        skill_text = ""
+        if skills:
+            skill_text = "\n\n你还掌握以下技能：\n"
+            for s in skills:
+                skill_text += f"- {s['name']}：{s['description']}\n"
         self.messages = [
-            {"role": "system", "content": "你是文件管理助手。用户让你查看、创建、编辑、删除文件或目录时，调用对应工具完成操作。"}
+            {"role": "system", "content": f"你是文件管理助手。用户让你查看、创建、编辑、删除文件或目录时，调用对应工具完成操作。{skill_text}"}
         ]
 
     def send(self, user_input):
