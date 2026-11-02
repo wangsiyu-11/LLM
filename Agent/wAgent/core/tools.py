@@ -22,6 +22,7 @@ TOOLS_SCHEMA = [
     {"type": "function", "function": {"name": "fetchWeb", "description": "获取指定网页URL的主要内容。", "parameters": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}}},
     {"type": "function", "function": {"name": "RunCli", "description": "执行本地命令行程序。", "parameters": {"type": "object", "properties": {"command": {"type": "string"}, "args": {"type": "array", "items": {"type": "string"}}}, "required": ["command", "args"]}}},
     {"type": "function", "function": {"name": "loadSkill", "description": "加载指定技能的完整说明文档。", "parameters": {"type": "object", "properties": {"name": {"type": "string"}, "filename": {"type": "string"}}, "required": ["name"]}}},
+    {"type": "function", "function": {"name": "createSkill", "description": "创建一个新的Skill。在.agents/skills/目录下创建子目录并写入SKILL.md。", "parameters": {"type": "object", "properties": {"name": {"type": "string", "description": "Skill名称，小写字母数字和连字符"}, "skillContext": {"type": "string", "description": "写入SKILL.md的完整内容"}}, "required": ["name", "skillContext"]}}},
 ]
 
 
@@ -87,6 +88,17 @@ def load_skill(name, filename=None):
     return f"未找到技能: {name}，可用: {[s['name'] for s in skills]}"
 
 
+def create_skill(name, skill_context):
+    skill_dir = os.path.join(os.getcwd(), ".agents", "skills", name)
+    if os.path.exists(skill_dir):
+        return f"错误：技能 {name} 已存在，避免覆盖。"
+    os.makedirs(skill_dir, exist_ok=True)
+    path = os.path.join(skill_dir, "SKILL.md")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(skill_context)
+    return f"技能 {name} 创建成功，路径: {path}"
+
+
 def execute_tool(name, args):
     dispatch = {
         "getcwd": lambda a: f"当前目录: {os.getcwd()}",
@@ -103,6 +115,7 @@ def execute_tool(name, args):
         "fetchWeb": lambda a: fetch_web(a.get("url", "")),
         "RunCli": lambda a: run_cli(a.get("command", ""), a.get("args", [])),
         "loadSkill": lambda a: load_skill(a.get("name", ""), a.get("filename")),
+        "createSkill": lambda a: create_skill(a.get("name", ""), a.get("skillContext", "")),
     }
     if name not in dispatch:
         return "未知工具"

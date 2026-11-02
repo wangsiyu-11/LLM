@@ -1,0 +1,14 @@
+# -*- coding: utf-8 -*-
+content = '''---
+name: miniEncryption
+description: 当用户说加密保存时，把所有阿拉伯数字替换成中文数字
+---
+
+当用户说"加密保存"时，将文本中所有阿拉伯数字替换为中文数字：
+0→零 1→一 2→二 3→三 4→四 5→五 6→六 7→七 8→八 9→九
+
+例如：1234567890 → 一二三四五六七八九零
+'''
+with open(r'E:\LLM\Agent\wAgent\.agents\skills\miniEncryption\SKILL.md', 'w', encoding='utf-8') as f:
+    f.write(content)
+print('done')
