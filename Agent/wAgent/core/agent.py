@@ -1,50 +1,47 @@
-import httpx
-import json
+from openai import OpenAI
 from config import BASE_URL, API_KEY, MODEL
 from core.tools import TOOLS_SCHEMA, execute_tool
 from core.skills import load_skills
+from core.mcp import connect_mcp_servers, get_mcp_tools_schema, call_mcp_tool
+import json
 
-
-class LLMClient:
-    def __init__(self):
-        self.base_url = BASE_URL
-        self.api_key = API_KEY
-        self.model = MODEL
-
-    def chat(self, messages):
-        resp = httpx.post(
-            f"{self.base_url}/chat/completions",
-            headers={"Authorization": f"Bearer {self.api_key}"},
-            json={"model": self.model, "messages": messages, "tools": TOOLS_SCHEMA},
-            timeout=60,
-        )
-        return resp.json()["choices"][0]["message"]
+client = OpenAI(base_url=BASE_URL, api_key=API_KEY)
 
 
 class Agent:
     def __init__(self):
-        self.llm = LLMClient()
+        self.messages = []
+        connect_mcp_servers()
         skills = load_skills()
-        skill_text = ""
-        if skills:
-            skill_text = "\n\n你还掌握以下技能：\n"
-            for s in skills:
-                skill_text += f"- {s['name']}：{s['description']}\n"
-        self.messages = [
-            {"role": "system", "content": f"你是文件管理助手。用户让你查看、创建、编辑、删除文件或目录时，调用对应工具完成操作。{skill_text}"}
-        ]
+        skill_list = "\n".join([f"- `{s['name']}`: {s['description']}" for s in skills])
+        self.tools = TOOLS_SCHEMA + get_mcp_tools_schema()
+        self.system_prompt = f"""你是一个文件管理助手。
+你有以下技能：
+{skill_list}
+使用 loadSkill 工具加载技能完整内容。
+"""
 
-    def send(self, user_input):
+    def chat(self, user_input):
         self.messages.append({"role": "user", "content": user_input})
-        msg = self.llm.chat(self.messages)
-        while msg.get("tool_calls"):
-            for tc in msg["tool_calls"]:
-                name = tc["function"]["name"]
-                args = json.loads(tc["function"]["arguments"]) if tc["function"]["arguments"] else {}
-                result = execute_tool(name, args)
-                self.messages.append(msg)
-                self.messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
-            msg = self.llm.chat(self.messages)
-        reply = msg.get("content", "")
-        self.messages.append({"role": "assistant", "content": reply})
-        return reply
+        while True:
+            resp = client.chat.completions.create(
+                model=MODEL,
+                messages=[{"role": "system", "content": self.system_prompt}] + self.messages,
+                tools=self.tools,
+                tool_choice="auto",
+            )
+            msg = resp.choices[0].message
+            if not msg.tool_calls:
+                self.messages.append({"role": "assistant", "content": msg.content})
+                return msg.content
+            self.messages.append({"role": "assistant", "content": msg.content or "", "tool_calls": [
+                {"id": tc.id, "type": "function", "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
+                for tc in msg.tool_calls
+            ]})
+            for tc in msg.tool_calls:
+                args = json.loads(tc.function.arguments)
+                if "__" in tc.function.name:
+                    result = call_mcp_tool(tc.function.name, args)
+                else:
+                    result = execute_tool(tc.function.name, args)
+                self.messages.append({"role": "tool", "tool_call_id": tc.id, "content": str(result)})

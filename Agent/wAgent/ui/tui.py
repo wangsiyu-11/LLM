@@ -4,11 +4,7 @@ from core.agent import Agent
 
 
 class ChatTUI(App):
-    CSS = """
-    Screen { layout: vertical; }
-    #chat { height: 1fr; border: solid blue; padding: 1; }
-    #input { height: 3; margin: 1; }
-    """
+    BINDINGS = [("ctrl+p", "palette", "palette")]
 
     def __init__(self):
         super().__init__()
@@ -16,28 +12,26 @@ class ChatTUI(App):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        yield RichLog(id="chat", markup=True)
+        self.chat_log = RichLog()
+        yield self.chat_log
         yield Input(placeholder="输入消息，回车发送...", id="input")
         yield Footer()
 
     def on_mount(self):
-        self.query_one("#input", Input).focus()
-        self.query_one("#chat", RichLog).write("[bold cyan]=== wAgent 文件管理助手 ===[/bold cyan]")
+        self.chat_log.write("=== wAgent 文件管理助手 ===")
 
     def on_input_submitted(self, event: Input.Submitted):
         text = event.value.strip()
         if not text:
             return
-        chat = self.query_one("#chat", RichLog)
-        chat.write(f"[bold green]你:[/bold green] {text}")
+        self.chat_log.write(f"你: {text}")
         self.query_one("#input", Input).value = ""
         try:
-            reply = self.agent.send(text)
-            chat.write(f"[bold magenta]AI:[/bold magenta] {reply}")
+            reply = self.agent.chat(text)
+            self.chat_log.write(f"AI: {reply}")
         except Exception as e:
-            chat.write(f"[bold red]出错: {e}[/bold red]")
+            self.chat_log.write(f"出错: {e}")
 
 
 def run():
-    app = ChatTUI()
-    app.run()
+    ChatTUI().run()
