@@ -1,5 +1,5 @@
 from openai import OpenAI
-from config import BASE_URL, API_KEY, MODEL
+from config import BASE_URL, API_KEY, MODEL, CONTEXT_WINDOW
 from core.tools import TOOLS_SCHEMA, execute_tool
 from core.skills import load_skills
 from core.mcp import connect_mcp_servers, get_mcp_tools_schema, call_mcp_tool
@@ -9,7 +9,7 @@ from datetime import datetime
 
 client = OpenAI(base_url=BASE_URL, api_key=API_KEY)
 
-CONTEXT_WINDOW = 128000
+SESSION_DIR = os.path.join(os.getcwd(), ".agents", "sessions")
 
 
 class Agent:
@@ -17,6 +17,8 @@ class Agent:
         self.messages = []
         self.last_tokens = 0
         self.blocked = False
+        self.session_id = datetime.now().strftime("%Y%m%d-%H%M%S")
+        self._load_agents_md()
         connect_mcp_servers()
         skills = load_skills()
         skill_list = "\n".join([f"- `{s['name']}`: {s['description']}" for s in skills])
@@ -28,8 +30,8 @@ class Agent:
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "text": {"type": "string", "description": "要查找的关键词"},
-                        "id": {"type": "string", "description": "可选，归档编号"}
+                        "text": {"type": "string"},
+                        "id": {"type": "string"}
                     },
                     "required": ["text"]
                 }
@@ -43,25 +45,37 @@ class Agent:
 如果需要查找历史对话中的细节，使用 recallContext 工具检索归档。
 """
 
+    def _load_agents_md(self):
+        path = os.path.join(os.getcwd(), "AGENTS.md")
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                content = f.read()
+            self.messages.append({"role": "system", "content": f"[AGENTS.md]\n{content}"})
+
     def _count_tokens(self):
         total = 0
         for m in self.messages:
             content = m.get("content", "") or ""
             total += len(content) // 2
-        sys_len = len(self.system_prompt) // 2
-        tool_len = len(json.dumps(self.tools)) // 4
-        return sys_len + tool_len + total
+        return len(self.system_prompt) // 2 + len(json.dumps(self.tools)) // 4 + total
 
     def get_context_info(self):
         tokens = self._count_tokens()
         pct = min(100, tokens * 100 // CONTEXT_WINDOW)
         return tokens, CONTEXT_WINDOW, pct
 
+    def get_mcp_info(self):
+        from core.mcp import MCP_TOOLS_MAP
+        result = []
+        for name in MCP_TOOLS_MAP:
+            result.append(name)
+        return result
+
     def chat(self, user_input):
-        if user_input.strip() == "/compact":
-            return self._compact()
+        if user_input.strip().startswith("/"):
+            return self._slash(user_input.strip())
         if self.blocked:
-            return "上下文已达到80%阈值，请先输入 /compact 压缩。"
+            return "上下文已达80%，请输入 /compact。"
         self.messages.append({"role": "user", "content": user_input})
         while True:
             resp = client.chat.completions.create(
@@ -92,51 +106,75 @@ class Agent:
         tokens, window, pct = self.get_context_info()
         if pct >= 80:
             self.blocked = True
-            return f"{self.messages[-1]['content']}\n\n⚠️ 上下文已使用 {pct}%，请输入 /compact 压缩。"
+            return f"{self.messages[-1]['content']}\n\n⚠️ 上下文 {pct}%，请 /compact。"
         return self.messages[-1].get("content", "")
+
+    def _slash(self, cmd):
+        if cmd == "/compact":
+            return self._compact()
+        elif cmd == "/save":
+            return self._save()
+        elif cmd == "/new":
+            self._save()
+            self.messages = []
+            self.blocked = False
+            self.session_id = datetime.now().strftime("%Y%m%d-%H%M%S")
+            self._load_agents_md()
+            return "新会话已创建。"
+        elif cmd == "/quit":
+            self._save()
+            return "GOODBYE"
+        elif cmd == "/help":
+            return "/compact 压缩上下文\n/save 保存会话\n/new 新建会话\n/resume 恢复历史会话\n/quit 退出\n/help 帮助"
+        elif cmd == "/resume":
+            return self._list_sessions()
+        return f"未知命令: {cmd}"
+
+    def _save(self):
+        os.makedirs(SESSION_DIR, exist_ok=True)
+        path = os.path.join(SESSION_DIR, f"{self.session_id}.jsonl")
+        with open(path, "w", encoding="utf-8") as f:
+            for m in self.messages:
+                f.write(json.dumps(m, ensure_ascii=False) + "\n")
+        return f"会话已保存: {self.session_id}"
+
+    def _list_sessions(self):
+        if not os.path.exists(SESSION_DIR):
+            return "没有历史会话。"
+        files = sorted(os.listdir(SESSION_DIR), reverse=True)
+        return "历史会话:\n" + "\n".join([f"  {f.replace('.jsonl','')}" for f in files[:10]])
 
     def _recall(self, text, archive_id=None):
         ctx_dir = os.path.join(os.getcwd(), ".agents", "context")
         if not os.path.exists(ctx_dir):
-            return "没有历史归档。"
+            return "没有归档。"
         results = []
         files = [f for f in os.listdir(ctx_dir) if f.endswith(".jsonl")]
         if archive_id:
             files = [f for f in files if archive_id in f]
         for fname in files:
-            fpath = os.path.join(ctx_dir, fname)
-            with open(fpath, "r", encoding="utf-8") as f:
+            with open(os.path.join(ctx_dir, fname), "r", encoding="utf-8") as f:
                 for i, line in enumerate(f):
                     if text in line:
-                        results.append(f"[{fname} 行{i}] {line[:300]}")
+                        results.append(f"[{fname}行{i}] {line[:300]}")
                         if len(results) >= 5:
                             break
-        if not results:
-            return f"未找到包含 '{text}' 的归档。"
-        return "\n---\n".join(results)
+        return "\n".join(results) if results else f"未找到 '{text}'"
 
     def _compact(self):
         now = datetime.now()
         archive_id = now.strftime("%Y%m%d-%H%M%S")
         ctx_dir = os.path.join(os.getcwd(), ".agents", "context")
         os.makedirs(ctx_dir, exist_ok=True)
-        archive_path = os.path.join(ctx_dir, f"{archive_id}.jsonl")
-        with open(archive_path, "w", encoding="utf-8") as f:
+        with open(os.path.join(ctx_dir, f"{archive_id}.jsonl"), "w", encoding="utf-8") as f:
             for m in self.messages:
                 f.write(json.dumps(m, ensure_ascii=False) + "\n")
-        compress_prompt = f"""你是一名 AI Agent 的上下文管理助手。当前会话即将达到上下文窗口限制，需要将历史对话压缩为一份高质量的工作摘要。
-请认真阅读提供的历史上下文，提取对后续工作仍然有价值的信息，生成一份约5000 Tokens的Markdown摘要。
-重点保留：用户目标、已完成工作、当前状态、关键技术信息（文件路径/函数名/配置/命令）、关键决策、下一步任务。
-删除寒暄、重复、过时内容。不要把计划写成已完成。
-
+        prompt = f"""你是上下文管理助手。将以下对话压缩为约5000字的Markdown摘要，保留：用户目标、已完成工作、当前状态、关键文件路径/命令/配置、下一步任务。
 历史对话：
-{json.dumps(self.messages, ensure_ascii=False, indent=2)}"""
-        resp = client.chat.completions.create(
-            model=MODEL,
-            messages=[{"role": "user", "content": compress_prompt}],
-        )
+{json.dumps(self.messages, ensure_ascii=False)}"""
+        resp = client.chat.completions.create(model=MODEL, messages=[{"role": "user", "content": prompt}])
         summary = resp.choices[0].message.content
-        note = f"\n\n> 此前上下文已于 {now.strftime('%Y-%m-%d %H:%M:%S')} 完成压缩，原始上下文保存在编号为 {archive_id} 的归档文件中。如需查找历史信息，请使用 recallContext 工具。"
+        note = f"\n\n> 上下文已于 {now} 压缩，归档编号 {archive_id}，用 recallContext 检索。"
         self.messages = [{"role": "assistant", "content": summary + note}]
         self.blocked = False
-        return f"✅ 上下文压缩完成！归档编号: {archive_id}\n摘要已生成，继续对话吧。"
+        return f"✅ 压缩完成！归档: {archive_id}"
